@@ -13,7 +13,6 @@ with open(os.path.join(credential_path, "oaicred.json"), "r") as config_file:
 
 openai_api_key = os.getenv("OPENAI_API_KEY", config_data.get("openai_api_key"))
 
-
 def sanitize_description(description):
     """Sanitize the description to avoid issues with command line execution."""
     sanitized_description = description.replace('"', "'").replace('\n', ' ')
@@ -39,15 +38,8 @@ def parse_keywords(keywords_section):
             keywords.append(keyword)
     return keywords
 
-
 def parse_iptc_data(iptc_data):
-    """#
-    Parse IPTC binary data and return a dictionary of IPTC properties.
-
-    :param iptc_data: A byte array containing IPTC binary data.
-    :returns: A dictionary containing IPTC properties.
-    """
-    #hexdump.hexdump(iptc_data, 'print')
+    """Parse IPTC binary data and return a dictionary of IPTC properties."""
     results = {}
     tag_start = b'\x1c\x02'
     pos = 0
@@ -64,7 +56,6 @@ def parse_iptc_data(iptc_data):
         tag_end = start + 5 + tag_len
         
         tag_value = iptc_data[start+5:tag_end].decode('utf-8')
-        # print(start, tag_type, tag_len, tag_end, tag_value)
         tag_key = IPTC_TAG_TYPES.get(str(tag_type), 'Unknown')
         if tag_key in results:
             if not isinstance(results[tag_key], list):
@@ -74,7 +65,6 @@ def parse_iptc_data(iptc_data):
             results[tag_key] = tag_value
         pos = tag_end
     return results
-
 
 def showImageIptcMeta(file_path):
     """Extract existing IPTC metadata."""
@@ -88,7 +78,6 @@ def showImageIptcMeta(file_path):
         processed_keywords = [''.join([word.capitalize() for word in keyword.split()]) for keyword in keywords]
         return title, description, processed_keywords
     
-
 IPTC_TAG_TYPES = {
     "2:0": "Record Version",
     "2:3": "Object Type",
@@ -150,18 +139,18 @@ def generate_openai_description_and_keywords(image_path, existing_title, existin
         "Authorization": f"Bearer {openai_api_key}"
     }
 
-    # Include existing metadata in the prompt and request a JSON response
+    # Updated prompt with clarity on description limits and tone
     prompt = f"""
     You are an assistant tasked with enhancing the metadata of an image. Here's the existing information:
-    
+
     Title: {existing_title}
     Description: {existing_description}
     Keywords: {', '.join(existing_keywords)}
-    
+
     Please return the following in plain JSON format without any additional formatting or code blocks:
-    1) A description of this image suitable for someone who is visually challenged.
-    2) An enhanced description discussing the artistic rationale behind the image based on the provided title and description - keep the text first person, simple and not too wordy
-    3) A set of keywords suitable for social media, listed as an array.
+    1) A description of this image suitable for someone who is visually challenged. Focus solely on describing the image as it appears, without interpretation or embellishment.
+    2) An enhanced description discussing the artistic rationale behind the image based on the provided title and description. The enhanced description should be limited to 300 characters and still read as a complete, coherent idea.
+    3) A set of keywords suitable for social media engagement, listed as an array.
 
     Respond in the following JSON format:
     {{
@@ -172,50 +161,31 @@ def generate_openai_description_and_keywords(image_path, existing_title, existin
     """
 
     payload = {
-        "model": "gpt-4o-mini",
+        "model": "gpt-4o",
         "messages": [
             {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        }
-                    }
-                ]
+                "content": prompt
             }
         ],
         "max_tokens": 300
     }
 
     print("DEBUG: Sending API request to OpenAI...")
-    #print(json.dumps(payload, indent=2))
-    
     response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
     
-    # Debug: Print the entire response for inspection
     print("DEBUG: Full API Response:")
     print(json.dumps(response.json(), indent=2))
 
     response_data = response.json()
 
-    # Extracting the JSON content
     try:
         content = response_data['choices'][0]['message']['content']
-        
-        # Debug: Print the extracted content
         print("DEBUG: Extracted Content:")
         print(content)
         
-        # Parse the JSON response
         response_json = json.loads(content)
         
-        # Extract the descriptions and keywords from the JSON
         visually_challenged_description = response_json.get("visually_challenged_description", "No description available")
         enhanced_description = response_json.get("enhanced_description", "No enhanced description available")
         keywords = response_json.get("keywords", [])
@@ -228,25 +198,15 @@ def generate_openai_description_and_keywords(image_path, existing_title, existin
 
     return visually_challenged_description, enhanced_description, keywords
 
-import os
-
 def process_image(file_path):
-    # Determine the output .json file name
     json_file_path = file_path.rsplit('.', 1)[0] + '.json'
 
-    # Skip processing if the .json file already exists
     if os.path.exists(json_file_path):
         print(f"Skipping {file_path} as {json_file_path} already exists.")
         return
 
-    # Extract existing metadata
     existing_title, existing_description, existing_keywords = showImageIptcMeta(file_path)
     
-    print(f"Existing Title: {existing_title}")
-    print(f"Existing Description: {existing_description}")
-    print(f"Existing Keywords: {existing_keywords}")
-    
-    # Analyze the image with OpenAI to generate the necessary descriptions and keywords
     visually_challenged_description, enhanced_description, keywords = generate_openai_description_and_keywords(
         file_path, 
         existing_title, 
@@ -254,25 +214,14 @@ def process_image(file_path):
         existing_keywords
     )
 
-    # Sanitize the descriptions to avoid issues with command line execution
     visually_challenged_description = sanitize_description(visually_challenged_description)
     enhanced_description = sanitize_description(enhanced_description)
     
-    print(f"Visually Challenged Description: {visually_challenged_description}")
-    print(f"Enhanced Description: {enhanced_description}")
-    print(f"Keywords: {keywords}")
-
-    # Merge existing and new keywords, ensure lowercase and remove duplicates
     merged_keywords = list(set((existing_keywords + keywords)))
     merged_keywords = [kw.lower() for kw in merged_keywords]
 
-    # Prepare hashtags as a single string, ensure lowercase and remove duplicates
     hashtags = ' '.join([f"#{kw}" for kw in merged_keywords])
 
-    # Debug: Print merged keywords
-    print(f"Merged Keywords: {merged_keywords}")
-    
-    # Write the title, descriptions, and keywords to the .json file
     metadata = {
         "title": existing_title,
         "visually_challenged_description": visually_challenged_description,
@@ -287,11 +236,9 @@ def process_image(file_path):
     print(f"Wrote metadata to {json_file_path}")
 
 def process_json_and_update_image(json_file_path):
-    """Read metadata from a .json file and update the corresponding image using ExifTool."""
     with open(json_file_path, 'r') as f:
         metadata = json.load(f)
     
-    # Determine the corresponding image file path
     image_file_path_jpg = json_file_path.rsplit('.', 1)[0] + '.jpg'
     image_file_path_png = json_file_path.rsplit('.', 1)[0] + '.png'
     if os.path.exists(image_file_path_jpg):
@@ -302,35 +249,44 @@ def process_json_and_update_image(json_file_path):
         print(f"No corresponding image found for JSON {json_file_path}")
         return
 
-    # Update metadata using ExifTool, setting each keyword separately
-    cmd_base = [
+    # Command to update description and title metadata
+    cmd_description = [
         'exiftool',
         f'-ImageDescription={metadata.get("enhanced_description", "")}',
         f'-Caption-Abstract={metadata.get("enhanced_description", "")}',
         f'-Description={metadata.get("enhanced_description", "")}',
         f'-ObjectName={metadata.get("title", "")}',
-        f'-Title={metadata.get("title", "")}'
+        f'-Title={metadata.get("title", "")}',
+        '-overwrite_original',
+        image_file_path
     ]
 
+    # Log the command being issued for description and title
+    print("Running command for description and title metadata:")
+    print(" ".join(cmd_description))
+
+    # Execute the command for description and title metadata
+    result_description = subprocess.run(cmd_description, capture_output=True, text=True)
+    print("ExifTool Output (Description and Title):", result_description.stdout)
+    if result_description.stderr:
+        print("ExifTool Error (Description and Title):", result_description.stderr)
+
+    # Command to update keywords metadata separately
+    cmd_keywords = ['exiftool']
     for keyword in metadata.get("keywords", []):
         keyword_no_spaces = keyword.replace(' ', '')
-        cmd_base.append(f'-keywords+={keyword_no_spaces}')
+        cmd_keywords.append(f'-keywords+={keyword_no_spaces}')
+    cmd_keywords.extend(['-overwrite_original', image_file_path])
 
-    cmd_base.append('-overwrite_original')
-    cmd_base.append(image_file_path)
+    # Log the command being issued for keywords
+    print("Running command for keywords metadata:")
+    print(" ".join(cmd_keywords))
 
-    # Log the command line being used
-    print(f"Running command: {' '.join(cmd_base)}")
-
-    # Execute the command and capture the output
-    result = subprocess.run(cmd_base, capture_output=True, text=True)
-
-    # Log the output from ExifTool
-    print("ExifTool Output:")
-    print(result.stdout)
-    if result.stderr:
-        print("ExifTool Error:")
-        print(result.stderr)
+    # Execute the command for keywords metadata
+    result_keywords = subprocess.run(cmd_keywords, capture_output=True, text=True)
+    print("ExifTool Output (Keywords):", result_keywords.stdout)
+    if result_keywords.stderr:
+        print("ExifTool Error (Keywords):", result_keywords.stderr)
 
 def process_folder(directory):
     for file_name in os.listdir(directory):
