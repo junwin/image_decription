@@ -141,7 +141,7 @@ def generate_openai_description_and_keywords(image_path, existing_title, existin
 
     # Updated prompt with clarity on description limits and tone
     prompt = f"""
-    You are an assistant tasked with enhancing the metadata of an image. Here's the existing information:
+    You are an assistant tasked with enhancing the metadata of an image. Here's the existing information -  ensure all text conforms to writing guidelines inspired by George Orwell's principles for clear and effective writing: prioritize clarity, precision, simplicity, and accessible language; prefer concrete over abstract; and break rules only when necessary to avoid clumsy or unnatural phrasing.:
 
     Title: {existing_title}
     Description: {existing_description}
@@ -271,7 +271,20 @@ def process_json_and_update_image(json_file_path):
     if result_description.stderr:
         print("ExifTool Error (Description and Title):", result_description.stderr)
 
-    # Command to update keywords metadata separately
+    # Command to clear existing keywords
+    cmd_clear_keywords = ['exiftool', '-keywords=', '-overwrite_original', image_file_path]
+
+    # Log the command being issued to clear keywords
+    print("Running command to clear existing keywords:")
+    print(" ".join(cmd_clear_keywords))
+
+    # Execute the command to clear keywords
+    result_clear_keywords = subprocess.run(cmd_clear_keywords, capture_output=True, text=True)
+    print("ExifTool Output (Clear Keywords):", result_clear_keywords.stdout)
+    if result_clear_keywords.stderr:
+        print("ExifTool Error (Clear Keywords):", result_clear_keywords.stderr)
+
+    # Command to update keywords metadata
     cmd_keywords = ['exiftool']
     for keyword in metadata.get("keywords", []):
         keyword_no_spaces = keyword.replace(' ', '')
@@ -287,6 +300,7 @@ def process_json_and_update_image(json_file_path):
     print("ExifTool Output (Keywords):", result_keywords.stdout)
     if result_keywords.stderr:
         print("ExifTool Error (Keywords):", result_keywords.stderr)
+
 
 def process_folder(directory):
     for file_name in os.listdir(directory):
