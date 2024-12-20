@@ -6,6 +6,10 @@ import requests
 import subprocess
 from PIL import Image, JpegImagePlugin, PngImagePlugin
 
+from openai import OpenAI
+
+client = OpenAI()
+
 # Load OpenAI credentials from environment variables
 credential_path = os.getenv("CREDENTIAL_PATH", "/home/your_user_id/credential")
 with open(os.path.join(credential_path, "oaicred.json"), "r") as config_file:
@@ -129,19 +133,14 @@ IPTC_TAG_TYPES = {
 
 IPTC_TAG_TYPES_INV = {v: k for k, v in IPTC_TAG_TYPES.items()}
 
-
 def generate_openai_description_and_keywords(image_path, existing_title, existing_description, existing_keywords):
-    """Generate descriptions for the visually challenged and an enhanced description along with keywords using OpenAI."""
+    """Generate descriptions for the visually challenged and an enhanced description along with keywords using OpenAI's Vision API."""
+    
     base64_image = encode_image(image_path)
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {openai_api_key}"
-    }
-
     # Updated prompt with clarity on description limits and tone
-    prompt = f"""
-    You are an assistant tasked with enhancing the metadata of an image. Here's the existing information -  ensure all text conforms to writing guidelines inspired by George Orwell's principles for clear and effective writing: prioritize clarity, precision, simplicity, and accessible language; prefer concrete over abstract; and break rules only when necessary to avoid clumsy or unnatural phrasing.:
+    prompt_text = f"""
+    You are an assistant tasked with enhancing the metadata of an image. Here's the existing information - ensure all text conforms to writing guidelines inspired by George Orwell's principles for clear and effective writing: prioritize clarity, precision, simplicity, and accessible language; prefer concrete over abstract; and break rules only when necessary to avoid clumsy or unnatural phrasing.
 
     Title: {existing_title}
     Description: {existing_description}
@@ -160,43 +159,83 @@ def generate_openai_description_and_keywords(image_path, existing_title, existin
     }}
     """
 
-    payload = {
-        "model": "gpt-4o",
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "max_tokens": 300
-    }
-
-    print("DEBUG: Sending API request to OpenAI...")
-    response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-    
-    print("DEBUG: Full API Response:")
-    print(json.dumps(response.json(), indent=2))
-
-    response_data = response.json()
-
     try:
-        content = response_data['choices'][0]['message']['content']
+        # Call the Vision API
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt_text.strip(),
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            },
+                        },
+                    ],
+                }
+            ],
+        )
+
+        print("DEBUG: Full API Response:")
+        print(response)
+
+        # Extract response content
+        content = response.choices[0].message.content
         print("DEBUG: Extracted Content:")
         print(content)
-        
+
+        # Parse JSON response
         response_json = json.loads(content)
         
         visually_challenged_description = response_json.get("visually_challenged_description", "No description available")
         enhanced_description = response_json.get("enhanced_description", "No enhanced description available")
         keywords = response_json.get("keywords", [])
-        
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        print(f"DEBUG: Error parsing JSON response: {e}")
+
+    except Exception as e:
+        print(f"DEBUG: Error processing API response: {e}")
         visually_challenged_description = 'No description available'
         enhanced_description = 'No enhanced description available'
         keywords = []
 
     return visually_challenged_description, enhanced_description, keywords
+
+
+def generate_openai_description_and_keywords2(image_path, existing_title, existing_description, existing_keywords):
+    """Generate descriptions for the visually challenged and an enhanced description along with keywords using OpenAI."""
+
+
+
+    base64_image = encode_image(image_path)
+    response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {
+        "role": "user",
+        "content": [
+            {
+            "type": "text",
+            "text": "What is in this image?",
+            },
+            {
+            "type": "image_url",
+            "image_url": {
+                "url":  f"data:image/jpeg;base64,{base64_image}"
+            },
+            },
+        ],
+        }
+    ],
+    )
+
+    print(response.choices[0])
+
+    return 
 
 def process_image(file_path):
     json_file_path = file_path.rsplit('.', 1)[0] + '.json'

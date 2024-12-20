@@ -21,7 +21,7 @@
             "type": "python",
             "request": "launch",
             "program": "image.py",
-            "args": ["E:\\photography\\work\\2024\\2024Nov\\Output"],
+            "args": ["E:\\photography\\work\\2024\\2024Dec\\Output"],
             "console": "integratedTerminal",
             "justMyCode": true
         }
